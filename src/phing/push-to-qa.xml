@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="push-to-qa" default="push-to-qa">
+
+	<property environment="env" />	
+	<php expression="strtolower('${featurebranch}')" returnProperty="branch" />
+	<if>
+		<equals arg1="${branch}" arg2="qa" />
+		<then>
+			<property name="git.branch" value="${branch}" override="true" />
+			<property name="htdocs" value="htdocs" override="true" />
+		</then>
+		<else>
+			<property name="git.branch" value="feature/${branch}" override="true" />
+			<property name="htdocs" value="htdocs-${branch}" override="true" />
+		</else>
+	</if>
+		
+	<property name="sync.exclude.file" value="/var/pmc/buildfiles/phping-script/sync.exclude" />
+
+	<property name="git.repo.vip.plugins" value="git@bitbucket.org:penskemediacorp/wordpress-vip-plugins.git" />
+	
+	<property name="git.repo.pmc.plugins" value="git@bitbucket.org:penskemediacorp/pmc-plugins.git" />
+	<property name="git.repo.site.theme" value="git@bitbucket.org:penskemediacorp/${sitetheme}.git" />
+	<property name="git.dir.pmc.plugins" value="${env.WORKSPACE}/git/pmc-plugins" />
+	<property name="git.dir.vip.plugins" value="${env.WORKSPACE}/git/vip-plugins" />
+	<property name="git.dir.site.theme" value="${env.WORKSPACE}/git/${sitetheme}" />
+
+	<property name="branch.dir.site.theme" value="${env.WORKSPACE}/branch/${branch}/${sitetheme}" />
+	<property name="branch.dir.pmc.plugins" value="${env.WORKSPACE}/branch/${branch}/pmc-plugins" />
+	
+	<property name="sync.wp.destination" value="wp-dev01:/var/www/sites/qa/${htdocs}" />
+	<property name="wp.source.dir" value="/var/www/sites/wordpress-htdocs" />
+	
+	<target name="setup-git-repo" hidden="true">
+		<available type="dir" file="${git.dir}" property="dir.exists" />
+		<if>
+			<not>
+				<equals arg1="${dir.exists}" arg2="true" />
+			</not>
+			<then>
+				<mkdir dir="${git.dir}" />
+			</then>
+		</if>
+		<available type="dir" file="${git.dir}/.git" property="dir.exists" />
+		<if>
+			<not>
+				<equals arg1="${dir.exists}" arg2="true" />
+			</not>
+			<then>
+				<gitclone
+					repository="${git.repo}"
+					targetPath="${git.dir}"
+				/>
+			</then>
+		</if>
+	</target>
+	
+	<target name="git-checkout" hidden="true" >
+		<GitFetch
+			repository="${git.dir}"
+			source="origin"
+			quiet="true"
+			all="true"
+			prune="true"
+			force="true"
+		/>
+		<exec
+			command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} reset --hard"
+			checkreturn="false"
+			dir="${git.dir}"
+			outputProperty="exec.output"
+		/>	
+		<echo message="${exec.output}" />
+
+		<exec
+			command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} branch | awk  '{ if ($0 !~ /master|\*/) printf $0 }'"
+			checkreturn="false"
+			dir="${git.dir}"
+			outputProperty="git.branch.list"
+		/>	
+		<echo message="git.branch.list: ${git.branch.list}" />
+		<if>
+			<and>
+				<isset property="git.branch.list" />
+				<not>
+					<equals arg1="${git.branch.list}" arg2="" trim="true"/>
+				</not>
+			</and>
+			<then>
+				<exec
+					command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} branch -D ${git.branch.list}"
+					checkreturn="false"
+					dir="${git.dir}"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>
+		</if>
+		<exec
+			command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} branch -r | grep -i 'origin/${git.branch}$' | awk '{ gsub(&quot;origin/&quot;,&quot;&quot;, $1); print $1}'"
+			checkreturn="false"
+			dir="${git.dir}"
+			outputProperty="git.branch.grep"
+		/>	
+		<echo message="git.branch.grep: ${git.branch.grep}" />
+		<if>
+			<contains string="${git.branch.grep}" substring="${featurebranch}" casesensitive="false"/>
+			<then>
+				<gitcheckout 
+					repository="${git.dir}"
+					branchname="${git.branch.grep}"
+					track="true"
+					force="true"
+				/>
+				<exec
+					command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} reset --hard origin/${git.branch.grep}"
+					checkreturn="false"
+					dir="${git.dir}"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>
+			<else>
+				<gitcheckout 
+					repository="${git.dir}"
+					branchname="master"
+					track="true"
+					force="true"
+				/>
+				<exec
+					command="git --git-dir=${git.dir}/.git --work-tree=${git.dir} reset --hard origin/master"
+					checkreturn="false"
+					dir="${git.dir}"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</else>
+		</if>
+		<gitpull repository="${git.dir}" all="true" force="true" />
+	</target>
+	
+	<target name="setup-git-branch" hidden="true">
+		<phingcall target="setup-git-repo">
+			<property name="git.repo" value="${git.repo.vip.plugins}" override="true" />
+			<property name="git.dir" value="${git.dir.vip.plugins}" override="true" />
+		</phingcall>	
+		<gitpull repository="${git.dir.vip.plugins}" all="true" />
+	
+		<phingcall target="setup-git-repo">
+			<property name="git.repo" value="${git.repo.pmc.plugins}" override="true" />
+			<property name="git.dir" value="${git.dir.pmc.plugins}" override="true" />
+		</phingcall>
+		<phingcall target="git-checkout">
+			<property name="git.dir" value="${git.dir.pmc.plugins}" override="true" />
+		</phingcall>
+		<if><!-- If site theme is define, setup the theme repo and checkout -->
+			<and>
+				<isset property="sitetheme" />
+				<not>
+					<equals arg1="${sitetheme}" arg2="" trim="true"/>
+				</not>
+			</and>
+			<then>
+				<phingcall target="setup-git-repo">
+					<property name="git.repo" value="${git.repo.site.theme}" override="true" />
+					<property name="git.dir" value="${git.dir.site.theme}" override="true" />
+				</phingcall>
+				<phingcall target="git-checkout">
+					<property name="git.dir" value="${git.dir.site.theme}" override="true" />
+				</phingcall>
+			</then>
+		</if>
+
+		
+	</target>
+	
+	<target name="validate-property" hidden="true">
+		<if>
+			<or>
+				<not>
+					<isset property="env.WORKSPACE" />
+				</not>
+				<equals arg1="${env.WORKSPACE}" arg2="" trim="true"/>
+			</or>
+			<then>
+				<fail message="property empty or missing: env.WORKSPACE" />
+			</then>
+		</if>
+		<if>
+			<or>
+				<not>
+					<isset property="featurebranch" />
+				</not>
+				<equals arg1="${featurebranch}" arg2="" trim="true"/>
+			</or>
+			<then>
+				<fail message="property empty or missing: featurebranch" />
+			</then>
+		</if>
+		<if>
+			<or>
+				<not>
+					<isset property="sitetheme" />
+				</not>
+				<equals arg1="${sitetheme}" arg2="" trim="true"/>
+			</or>
+			<then>
+				<fail message="property empty or missing: sitetheme" />
+			</then>
+		</if>
+	</target>
+	
+	<target name="notify-fail" hidden="true">
+		<if>
+			<and>
+				<isset property="notifyemail" />
+				<not>
+					<equals arg1="${notifyemail}" arg2="" trim="true"/>
+				</not>
+			</and>
+			<then>
+				<mail tolist="${notifyemail}" from="push-to-qa@deployment.pmc.com" subject="error pushing to qa: ${sitetheme} ${git.branch}">
+Build errors detected.
+Job  : ${env.JOB_NAME}
+Build: ${env.BUILD_NUMBER}
+Console log: ${env.BUILD_URL}console
+
+${notify.message}
+</mail>
+			</then>
+		</if>
+		<fail message="Errors detected" />
+	</target>
+	
+	<target name="push-to-qa" depends="validate-property, setup-git-branch">
+		<if>
+			<available file="${git.dir.site.theme}/library/scss" type="dir" />
+			<then>
+				<exec
+					command="compass compile -e production --force"
+					dir="${git.dir.site.theme}/library/scss"
+					checkreturn="false"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>			
+		</if>
+		<if>
+			<available file="${git.dir.site.theme}/library/sass" type="dir" />
+			<then>
+				<exec
+					command="compass compile -e production --force"
+					dir="${git.dir.site.theme}/library/sass"
+					checkreturn="false"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>			
+		</if>
+		<if>
+			<available file="${git.dir.site.theme}/scss" type="dir" />
+			<then>
+				<exec
+					command="compass compile -e production --force"
+					dir="${git.dir.site.theme}/scss"
+					checkreturn="false"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>			
+		</if>
+		<if>
+			<available file="${git.dir.site.theme}/config.rb" type="file" />
+			<then>
+				<exec
+					command="compass compile -e production --force"
+					dir="${git.dir.site.theme}"
+					checkreturn="false"
+					outputProperty="exec.output"
+				/>	
+				<echo message="${exec.output}" />
+			</then>			
+		</if>
+		<exec
+			command="ssh www-data@wp-dev01 'mkdir /var/www/sites/qa/${htdocs}/'"
+			checkreturn="false"
+			outputProperty="exec.output"
+		/>	
+		<exec
+			command="ssh www-data@wp-dev01 'cp -rP ${wp.source.dir}/* /var/www/sites/qa/${htdocs}/'"
+			checkreturn="false"
+			outputProperty="exec.output"
+		/>	
+		<echo message="ssh cp => wordpress root: ${exec.output}" />
+		<exec
+			command="rsync -rzh --stats --exclude=.git ${git.dir.vip.plugins}/ ${sync.wp.destination}/wp-content/themes/vip/plugins/"
+			dir="${git.dir.vip.plugins}"
+			checkreturn="false"
+			outputProperty="exec.output"
+		/>	
+		<echo message="rsync => vip-plugins: ${exec.output}" />
+		<exec
+			command="rsync -rzh --stats --exclude=.git ${git.dir.pmc.plugins}/ ${sync.wp.destination}/wp-content/themes/vip/pmc-plugins/"
+			dir="${git.dir.pmc.plugins}"
+			checkreturn="false"
+			outputProperty="exec.output"
+		/>	
+		<echo message="rsync => pmc-plugins: ${exec.output}" />
+		<if>
+			<contains string="${exec.output}" substring="rsync error" />
+			<then>
+				<phingcall target="notify-fail">
+					<property name="notify.message" value="${exec.output}" override="true" />
+				</phingcall>	
+			</then>
+		</if>
+
+		<if><!-- If site theme is define, rsync -->
+			<and>
+				<isset property="sitetheme" />
+				<not>
+					<equals arg1="${sitetheme}" arg2="" trim="true"/>
+				</not>
+			</and>
+			<then>
+				<exec
+					command="rsync -rzh --stats --exclude=.git ${git.dir.site.theme}/ ${sync.wp.destination}/wp-content/themes/vip/${sitetheme}/"
+					dir="${git.dir.site.theme}"
+					checkreturn="false"
+					outputProperty="exec.output"
+				/>	
+				<echo message="rsync => ${sitetheme}: ${exec.output}" />
+
+				<if>
+					<contains string="${exec.output}" substring="rsync error" />
+					<then>
+						<phingcall target="notify-fail">
+							<property name="notify.message" value="${exec.output}" override="true" />
+						</phingcall>	
+					</then>
+				</if>
+				
+			</then>
+		</if>
+		
+		<if>
+			<and>
+				<isset property="notifyemail" />
+				<not>
+					<equals arg1="${notifyemail}" arg2="" trim="true"/>
+				</not>
+			</and>
+			<then>
+				<mail tolist="${notifyemail}" from="jenkins@pmc.com" subject="push to qa: ${sitetheme} ${git.branch}">
+The build process is completed.
+Job  : ${env.JOB_NAME}
+Build: ${env.BUILD_NUMBER}
+Console log: ${env.BUILD_URL}console			
+</mail>
+			</then>
+		</if>
+	</target>
+
+</project>

@@ -1,0 +1,65 @@
+#conference sites
+server {
+        server_name ~^(?<branch>.+)[\-\.]qa.conferences.[^\.]+.com$;
+        root /var/www/sites/qa/htdocs-$branch;
+        index index.html index.php;
+
+		#include global/qa_auth_required.conf;
+        i#nclude global/restrictions.conf;
+        include global/wordpress.conf;
+}
+
+server {
+        server_name ~^qa.[^\.]+.com$;
+        root /var/www/sites/qa/htdocs;
+        index index.html index.php;
+
+        include global/qa_auth_required.conf;
+        include global/restrictions.conf;
+        include global/wordpress.conf;
+}
+
+server {
+        server_name ~^(?<branch>.+)[\-\.]qa.[^\.]+.com$;
+        root /var/www/sites/qa/htdocs-$branch;
+        index index.html index.php;
+
+		#include global/qa_auth_required.conf;
+        include global/restrictions.conf;
+        include global/wordpress.conf;
+}
+
+# SSL setting for qa.[domain].com
+server {
+        listen 443;
+        server_name ~^qa.[^\.]+.com$;
+
+        ssl on;
+        ssl_certificate /etc/ssl/qa-san-domain/qa-san-domain-chained.crt;
+        ssl_certificate_key /etc/ssl/qa-san-domain/qa-san-domain.key;
+
+        root /var/www/sites/qa/htdocs;
+        index index.html index.php;
+
+        #include global/qa_auth_required.conf;
+        include global/restrictions.conf;
+        include global/wordpress.conf;
+
+}
+
+# SSL setting for [branch].qa.[domain].com
+server {
+	listen 443;
+        server_name ~^(?<branch>.+)[\-\.]qa.[^\.]+.com$;
+
+        ssl on;
+        ssl_certificate /etc/ssl/qa-san-domain/qa-san-domain-chained.crt;
+        ssl_certificate_key /etc/ssl/qa-san-domain/qa-san-domain.key;
+
+        root /var/www/sites/qa/htdocs-$branch;
+        index index.html index.php;
+
+        #include global/qa_auth_required.conf;
+        include global/restrictions.conf;
+        include global/wordpress.conf;
+}
