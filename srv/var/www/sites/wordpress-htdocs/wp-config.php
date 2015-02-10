@@ -1,0 +1,1 @@
+/var/www/sites/wp-config.all-sites.do-not-delete-or-move.php
