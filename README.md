@@ -4,6 +4,10 @@
 * Config remote ssh access from deployment server to web server with ssh alias wp-dev01
 * Setup nginx with configuration files from repo folder "srv/etc/nginx"
 * Set up web server root: copy repo folder "srv/var" to server "/var"
+* Checkout worpress source to folder: /var/www/sites/wordpress-trunk
+* Places all wordpress mu-plugins in folder:  /var/www/sites/wordpress-mu-plugins
+* Places wordpress plugins in folder:  /var/www/sites/wordpress-plugins
+* Setup qa wildcard DNS entry for all domain, eg. *.qa.domain.com
 
 ## Setup deploy server
 * Install jenkins
@@ -15,7 +19,7 @@
 * Check [x] "This build is parameterized"
 * Add string parameter
   * Name: featurebranch
-  * Description: feature/[branch] to pull and push to qa server.  Enter "qa" for qa branch, enter "name" for feature/name branch
+  * Description: feature/[branch] to pull and push to qa server.  Enter "qa" for qa branch, enter "name" for feature/name branch.
 * Add string parameter
   * Name: notifyemail
   * Description: Notify email when job is complete
